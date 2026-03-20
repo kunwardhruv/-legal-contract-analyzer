@@ -142,50 +142,29 @@ def get_embedding_model():
 # ============================================
 
 def store_in_chromadb(chunks: list, filename: str):
-    """
-    Chunks → Vectors banao → ChromaDB mein save karo
-
-    ChromaDB kaise kaam karta hai:
-    1. Har chunk ka vector banata hai (embedding model use karke)
-    2. Vector + original text + metadata saath store karta hai
-    3. Similarity search ke liye optimized hai
-
-    IMPORTANT: Hamesha in-memory use karo (persist_directory nahi)
-    Kyu? Streamlit Cloud pe file system write nahi hota
-    In-memory = RAM mein store hota hai = cloud + local dono pe kaam karta hai
-    Trade-off: Page refresh pe data reset — par yeh acceptable hai
-    """
-
+    
     print(f"🗄️  ChromaDB mein store kar raha hun...")
-
-    # Har chunk ke saath extra info (metadata) store karo
-    # Kyu? Baad mein pata chale ki chunk kaunse file ka hai
+    
     metadatas = [
-        {
-            "source": filename,  # Kaunsi file se aaya
-            "chunk_index": i     # Kaunsa chunk number hai
-        }
+        {"source": filename, "chunk_index": i}
         for i, _ in enumerate(chunks)
     ]
-
+    
     embedding_model = get_embedding_model()
-
-    # In-memory ChromaDB — persist_directory nahi diya
-    # Yeh RAM mein rehta hai — cloud pe bhi perfectly kaam karta hai
+    
+    # Har upload ke liye unique collection naam
+    # Kyu? Same naam pe dobara create karne se conflict hota hai
+    unique_collection = f"legal_{os.urandom(4).hex()}"
+    
     vectorstore = Chroma.from_texts(
-        texts=chunks,                        # Hamare text chunks
-        embedding=embedding_model,           # Embedding model
-        metadatas=metadatas,                 # Extra info
-        collection_name=config.COLLECTION_NAME  # DB ka naam
-        # persist_directory intentionally nahi diya — in-memory!
+        texts=chunks,
+        embedding=embedding_model,
+        metadatas=metadatas,
+        collection_name=unique_collection  # ← Unique naam!
     )
-
-    print(f"✅ {len(chunks)} chunks ChromaDB mein save ho gaye!")
-
-    # Vectorstore RETURN karo — caller isko session state mein save karega
-    # Yahi sabse important hai — ek hi instance poori app mein use ho
+    
+    print(f"✅ {len(chunks)} chunks store ho gaye!")
     return vectorstore
-
 
 # ============================================
 # MAIN FUNCTION — Upar sab ek saath
