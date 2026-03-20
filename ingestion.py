@@ -19,6 +19,7 @@ from langchain_chroma import Chroma
 
 import config
 import os
+import chromadb
 
 
 # ============================================
@@ -152,20 +153,24 @@ def store_in_chromadb(chunks: list, filename: str):
     
     embedding_model = get_embedding_model()
     
-    # Har upload ke liye unique collection naam
-    # Kyu? Same naam pe dobara create karne se conflict hota hai
-    unique_collection = f"legal_{os.urandom(4).hex()}"
+    # Har baar BILKUL naya fresh client banao
+    # Yahi asli fix hai — purana client reuse nahi hoga
+    fresh_client = chromadb.EphemeralClient()
     
-    vectorstore = Chroma.from_texts(
+    vectorstore = Chroma(
+        client=fresh_client,
+        collection_name="legal_contracts",
+        embedding_function=embedding_model,
+    )
+    
+    # Chunks add karo
+    vectorstore.add_texts(
         texts=chunks,
-        embedding=embedding_model,
-        metadatas=metadatas,
-        collection_name=unique_collection  # ← Unique naam!
+        metadatas=metadatas
     )
     
     print(f"✅ {len(chunks)} chunks store ho gaye!")
     return vectorstore
-
 # ============================================
 # MAIN FUNCTION — Upar sab ek saath
 # ============================================
