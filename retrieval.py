@@ -62,27 +62,28 @@ def get_llm():
 # ============================================
 
 def get_vectorstore():
-    """
-    Pehle se saved ChromaDB load karo
-
-    Kyu dobara banao nahi?
-    - Step 2 mein PDF → ChromaDB save kar chuke hain
-    - Woh data disk pe persist hai
-    - Sirf load karo aur use karo — fast!
-    """
-
+    
     embedding_model = HuggingFaceEmbeddings(
         model_name=config.EMBEDDING_MODEL,
         model_kwargs={"device": "cpu"},
         encode_kwargs={"normalize_embeddings": True}
     )
-
-    vectorstore = Chroma(
-        persist_directory=config.CHROMA_DB_PATH,
-        embedding_function=embedding_model,
-        collection_name=config.COLLECTION_NAME
-    )
-
+    
+    import os
+    if os.path.exists("/mount/src"):
+        # Cloud — in-memory
+        vectorstore = Chroma(
+            embedding_function=embedding_model,
+            collection_name=config.COLLECTION_NAME
+        )
+    else:
+        # Local — persistent
+        vectorstore = Chroma(
+            persist_directory=config.CHROMA_DB_PATH,
+            embedding_function=embedding_model,
+            collection_name=config.COLLECTION_NAME
+        )
+    
     return vectorstore
 
 

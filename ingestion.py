@@ -124,50 +124,39 @@ def get_embedding_model():
 # STEP 4: CHROMADB MEIN SAVE KARO
 # ============================================
 
-def store_in_chromadb(chunks: list, filename: str) -> Chroma:
-    """
-    Chunks → Vectors banao → ChromaDB mein store karo
-    
-    ChromaDB kaise kaam karta hai:
-    - Har chunk ka vector banata hai (using embedding model)
-    - Vector + original text saath store karta hai
-    - Similarity search ke liye optimized
-    
-    filename kyun save kar rahe hain?
-    - Metadata ke roop mein
-    - Pata chale ki yeh chunk kaunse document ka hai
-    """
+def store_in_chromadb(chunks: list, filename: str):
     
     print(f"🗄️  ChromaDB mein store kar raha hun...")
     
-    # Metadata banao har chunk ke liye
-    # Metadata = extra info jo chunk ke saath store hogi
     metadatas = [
-        {
-            "source": filename,
-            "chunk_index": i,
-        }
+        {"source": filename, "chunk_index": i}
         for i, _ in enumerate(chunks)
     ]
     
-    # Embedding model lo
     embedding_model = get_embedding_model()
     
-    # ChromaDB mein store karo
-    # Yeh automatically:
-    # 1. Har chunk ka vector banayega
-    # 2. Vector + text + metadata store karega
-    vectorstore = Chroma.from_texts(
-        texts=chunks,                          # Hamare chunks
-        embedding=embedding_model,             # Embedding model
-        metadatas=metadatas,                   # Extra info
-        persist_directory=config.CHROMA_DB_PATH,  # Kahan save karo
-        collection_name=config.COLLECTION_NAME    # Database ka naam
-    )
+    # Cloud pe in-memory use karo, local pe persistent
+    import os
+    if os.path.exists("/mount/src"):  
+        # Streamlit Cloud pe hai
+        vectorstore = Chroma.from_texts(
+            texts=chunks,
+            embedding=embedding_model,
+            metadatas=metadatas,
+            collection_name=config.COLLECTION_NAME
+            # persist_directory nahi diya = in-memory!
+        )
+    else:
+        # Local machine pe hai
+        vectorstore = Chroma.from_texts(
+            texts=chunks,
+            embedding=embedding_model,
+            metadatas=metadatas,
+            persist_directory=config.CHROMA_DB_PATH,
+            collection_name=config.COLLECTION_NAME
+        )
     
-    print(f"✅ {len(chunks)} chunks ChromaDB mein save ho gaye!")
-    print(f"📁 Location: {config.CHROMA_DB_PATH}")
-    
+    print(f"✅ {len(chunks)} chunks store ho gaye!")
     return vectorstore
 
 
