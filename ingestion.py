@@ -12,14 +12,11 @@ from langchain_huggingface import HuggingFaceEmbeddings
 # HuggingFace ka free local embedding model
 # Text → Numbers (vectors) convert karta hai
 # "Meaning" ko numbers mein represent karta hai
-
-from langchain_chroma import Chroma
-# ChromaDB ke saath baat karne ka LangChain interface
-# Vectors store aur search karta hai
+from langchain_community.vectorstores import FAISS
 
 import config
 import os
-import chromadb
+
 
 
 # ============================================
@@ -139,12 +136,11 @@ def get_embedding_model():
 
 
 # ============================================
-# STEP 4: CHROMADB MEIN STORE KARO
+# STEP 4: FAISS MEIN STORE KARO
 # ============================================
-
-def store_in_chromadb(chunks: list, filename: str):
+def store_in_vectordb(chunks: list, filename: str):
     
-    print(f"🗄️  ChromaDB mein store kar raha hun...")
+    print(f"🗄️  FAISS mein store kar raha hun...")
     
     metadatas = [
         {"source": filename, "chunk_index": i}
@@ -153,23 +149,15 @@ def store_in_chromadb(chunks: list, filename: str):
     
     embedding_model = get_embedding_model()
     
-    # Har baar BILKUL naya fresh client banao
-    # Yahi asli fix hai — purana client reuse nahi hoga
-    fresh_client = chromadb.EphemeralClient()
-    
-    vectorstore = Chroma(
-        client=fresh_client,
-        collection_name="legal_contracts",
-        embedding_function=embedding_model,
-    )
-    
-    # Chunks add karo
-    vectorstore.add_texts(
+    # FAISS = Pure in-memory, no client needed
+    # Har baar fresh instance — zero conflicts!
+    vectorstore = FAISS.from_texts(
         texts=chunks,
+        embedding=embedding_model,
         metadatas=metadatas
     )
     
-    print(f"✅ {len(chunks)} chunks store ho gaye!")
+    print(f"✅ {len(chunks)} chunks FAISS mein save ho gaye!")
     return vectorstore
 # ============================================
 # MAIN FUNCTION — Upar sab ek saath
@@ -199,8 +187,8 @@ def ingest_pdf(pdf_path: str):
     # Step 2: Text → Chunks
     chunks = split_text_into_chunks(text)
 
-    # Step 3 + 4: Chunks → Vectors → ChromaDB
-    vectorstore = store_in_chromadb(chunks, filename)
+    # Step 3 + 4: Chunks → Vectors → FAISS
+    vectorstore = store_in_vectordb(chunks, filename)
 
     print("\n" + "="*50)
     print("✅ Ingestion complete! PDF ready for analysis!")

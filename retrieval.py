@@ -21,6 +21,10 @@ from langchain_core.output_parsers import JsonOutputParser
 # Python dictionary mein convert karta hai
 # Bina iske LLM free text deta hai — parse karna mushkil hota
 
+
+from langchain_community.vectorstores import FAISS
+
+
 import config
 from models import ClauseAnalysis, ContractSummary
 from prompts import CLAUSE_ANALYSIS_PROMPT, CONTRACT_SUMMARY_PROMPT, CHAT_PROMPT
