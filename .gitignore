@@ -1,0 +1,24 @@
+# Virtual environment — 500MB+ hai, zarurat nahi
+venv/
+
+# API Keys — KABHI NAHI upload karo!
+.env
+
+# ChromaDB — Local database, regenerate ho sakta hai
+chroma_db/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+
+# Test files
+test_ingestion.py
+test_retrieval.py
+
+# Windows files
+Thumbs.db
+desktop.ini
+
+# VS Code
+.vscode/

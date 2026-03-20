@@ -1,0 +1,23 @@
+# LLM + AI Framework
+langchain==0.3.7
+langchain-groq==0.2.1
+langchain-huggingface==0.1.2
+langchain-chroma==0.1.4
+
+# Vector DB
+chromadb==0.5.20
+
+# PDF Processing
+pymupdf==1.24.14
+
+# Embeddings (HuggingFace local)
+sentence-transformers==3.3.1
+
+# Data Validation
+pydantic==2.10.3
+
+# Frontend
+streamlit==1.41.1
+
+# Environment Variables
+python-dotenv==1.0.1
