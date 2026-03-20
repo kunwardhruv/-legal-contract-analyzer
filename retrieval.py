@@ -1,23 +1,25 @@
 # retrieval.py
 # RAG ka BRAIN — Retrieval + Generation dono yahan hain
+#
+# Flow:
+# User question → Vectorstore se chunks dhundo → LLM ko bhejo → Answer lo
 
 from langchain_groq import ChatGroq
-# ChatGroq = Groq API ke saath baat karne ka interface
-# Groq = Free + Ultra fast LLM API
+# ChatGroq = Groq API ke saath baat karne ka LangChain interface
+# Groq = World's fastest LLM inference, free tier available
 
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_chroma import Chroma
+# Same embedding model jo ingestion mein use kiya
+# Question ko bhi vector mein convert karta hai search ke liye
+
 from langchain.prompts import PromptTemplate
-# PromptTemplate = Dynamic prompts banane ke liye
-# Variables inject kar sakte ho: {context}, {question}
+# PromptTemplate = Dynamic prompts — variables inject kar sakte ho
+# Jaise: {context} mein chunks aur {question} mein user ka sawaal
 
 from langchain_core.output_parsers import JsonOutputParser
-# JsonOutputParser = LLM ke text response ko
-# automatically Python dict/object mein convert karta hai
-
-from langchain_core.runnables import RunnablePassthrough
-# RunnablePassthrough = Data ko chain mein aage pass karta hai
-# LangChain Expression Language (LCEL) ka part hai
+# JsonOutputParser = LLM ke text response ko automatically
+# Python dictionary mein convert karta hai
+# Bina iske LLM free text deta hai — parse karna mushkil hota
 
 import config
 from models import ClauseAnalysis, ContractSummary
@@ -25,116 +27,46 @@ from prompts import CLAUSE_ANALYSIS_PROMPT, CONTRACT_SUMMARY_PROMPT, CHAT_PROMPT
 
 
 # ============================================
-# STEP 1: LLM SETUP (GROQ)
+# LLM SETUP
 # ============================================
 
 def get_llm():
     """
-    Groq LLM setup karo
+    Groq LLM initialize karo
 
-    ChatGroq kyu?
-    - Groq = World's fastest LLM inference
-    - Free tier mein generous limits
-    - Llama 3.3 70B = GPT-4 level quality
-    - LangChain ke saath native integration
-
-    temperature=0.1 kyu?
-    - Temperature = LLM ki "creativity"
-    - 0.0 = Bilkul predictable, robotic
-    - 1.0 = Bahut creative, kabhi kabhi hallucinate
-    - 0.1 = Legal analysis ke liye perfect
-            Accurate + consistent answers
-            Thoda variation allowed
+    Temperature = LLM ki "creativity" setting
+    0.0 = Bilkul predictable, robotic jawab
+    1.0 = Bahut creative, kabhi kabhi hallucinate karta hai
+    0.1 = Legal analysis ke liye perfect:
+          Accurate + consistent + thoda natural
     """
 
     llm = ChatGroq(
         api_key=config.GROQ_API_KEY,
-        model=config.GROQ_MODEL,
-        temperature=0.1,
-        max_tokens=2048,  # Max response length
+        model=config.GROQ_MODEL,     # "llama-3.3-70b-versatile"
+        temperature=0.1,              # Low = consistent legal analysis
+        max_tokens=2048,              # Max response length
     )
 
     return llm
 
 
 # ============================================
-# STEP 2: VECTORSTORE LOAD KARO
-# ============================================
-
-def get_vectorstore():
-    
-    embedding_model = HuggingFaceEmbeddings(
-        model_name=config.EMBEDDING_MODEL,
-        model_kwargs={"device": "cpu"},
-        encode_kwargs={"normalize_embeddings": True}
-    )
-    
-    import os
-    if os.path.exists("/mount/src"):
-        # Cloud — in-memory
-        vectorstore = Chroma(
-            embedding_function=embedding_model,
-            collection_name=config.COLLECTION_NAME
-        )
-    else:
-        # Local — persistent
-        vectorstore = Chroma(
-            persist_directory=config.CHROMA_DB_PATH,
-            embedding_function=embedding_model,
-            collection_name=config.COLLECTION_NAME
-        )
-    
-    return vectorstore
-
-
-# ============================================
-# STEP 3: RETRIEVER BANAO
-# ============================================
-
-def get_retriever():
-    """
-    Retriever = ChromaDB se relevant chunks dhundne wala
-
-    search_type="similarity" kyu?
-    - Cosine similarity use karta hai
-    - Question vector aur chunk vectors compare karta hai
-    - Most similar chunks return karta hai
-
-    k=5 kyu?
-    - Top 5 chunks bhejo LLM ko
-    - Kam bhejo → Context kam → Poor answers
-    - Zyada bhejo → Expensive + Confusing
-    - 5 = Sweet spot for legal docs
-    """
-
-    vectorstore = get_vectorstore()
-
-    retriever = vectorstore.as_retriever(
-        search_type="similarity",
-        search_kwargs={"k": config.TOP_K_RESULTS}
-    )
-
-    return retriever
-
-
-# ============================================
-# STEP 4: CONTEXT FORMAT KARO
+# HELPER — Chunks ko readable format mein
 # ============================================
 
 def format_docs(docs) -> str:
     """
     Retrieved chunks ko ek clean string mein join karo
 
-    LLM ko aise bhejenge:
-    --- Chunk 1 ---
+    LLM ko clear context milna chahiye:
+    --- Section 1 ---
     ...text...
 
-    --- Chunk 2 ---
+    --- Section 2 ---
     ...text...
 
-    Kyu format karo?
-    - LLM clearly samjhe kahan ek chunk khatam hota hai
-    - Better context understanding
+    Kyu? LLM clearly samjhe kahan ek chunk khatam hota hai
     """
 
     formatted = []
@@ -145,45 +77,48 @@ def format_docs(docs) -> str:
 
 
 # ============================================
-# STEP 5: CONTRACT SUMMARY
+# CONTRACT SUMMARY
 # ============================================
 
-def get_contract_summary(pdf_text: str) -> ContractSummary:
+def get_contract_summary(pdf_text: str) -> dict:
     """
     Poore contract ka overview banao
 
-    Yeh function:
-    1. Contract ke pehle 3000 chars lo (overview ke liye kaafi)
-    2. LLM ko summary prompt ke saath bhejo
-    3. Structured ContractSummary object return karo
+    Kyu sirf pehle 3000 chars?
+    Summary ke liye poora contract padhna zaroori nahi
+    Pehle 3000 chars mein usually:
+    → Contract type
+    → Parties ka naam
+    → Effective date
+    → Main purpose
+    ...sab hota hai
     """
 
     print("📋 Contract summary bana raha hun...")
 
     llm = get_llm()
 
-    # JsonOutputParser batata hai LLM ko —
-    # "Sirf JSON mein jawab do, kuch aur mat likho"
+    # JsonOutputParser — LLM ko force karta hai structured JSON dene ke liye
+    # ContractSummary = Pydantic model (models.py mein defined)
+    # get_format_instructions() = LLM ko exact format batata hai
     parser = JsonOutputParser(pydantic_object=ContractSummary)
 
-    # PromptTemplate mein variables inject karte hain
     prompt = PromptTemplate(
         template=CONTRACT_SUMMARY_PROMPT + "\n\n{format_instructions}",
         input_variables=["contract_text"],
         partial_variables={
             "format_instructions": parser.get_format_instructions()
+            # Yeh LLM ko batata hai: "Sirf is JSON format mein jawab do"
         }
     )
 
-    # Chain banao: Prompt → LLM → Parser
-    # | operator = LangChain Expression Language (LCEL)
-    # Matlab: pehle prompt banao, phir LLM ko bhejo,
-    #         phir output parse karo
+    # Chain = prompt | llm | parser
+    # | operator = LCEL (LangChain Expression Language)
+    # Matlab: pehle prompt banao → LLM ko bhejo → output parse karo
     chain = prompt | llm | parser
 
-    # Pehle 3000 chars — summary ke liye kaafi hai
     result = chain.invoke({
-        "contract_text": pdf_text[:3000]
+        "contract_text": pdf_text[:3000]  # Sirf pehle 3000 chars bhejo
     })
 
     print("✅ Summary ready!")
@@ -191,23 +126,27 @@ def get_contract_summary(pdf_text: str) -> ContractSummary:
 
 
 # ============================================
-# STEP 6: CLAUSE RISK ANALYSIS — MAIN FUNCTION
+# RISK ANALYSIS — MAIN FUNCTION
 # ============================================
 
-def analyze_contract_risks(pdf_text: str) -> list:
+def analyze_contract_risks(pdf_text: str, vectorstore) -> list:
     """
     Contract ke risky clauses dhundo aur analyze karo
 
+    vectorstore PARAMETER kyu?
+    Pehle get_vectorstore() use karte the — naya ChromaDB banata tha
+    Problem: Naya instance = alag RAM location = "tenant not found" error!
+    Solution: app.py se wahi vectorstore pass karo jo ingest_pdf ne banaya
+              Ek hi instance = koi confusion nahi!
+
     Strategy:
-    - Specific legal clause types ke liye search karo
-    - Har type ke liye RAG karo
-    - Risk analysis return karo
+    Common risky clause types ke liye search karo
+    Har type ke liye top chunks lo → LLM se analyze karo
     """
 
     print("🔍 Risk analysis shuru kar raha hun...")
 
     llm = get_llm()
-    retriever = get_retriever()
     parser = JsonOutputParser(pydantic_object=ClauseAnalysis)
 
     prompt = PromptTemplate(
@@ -218,8 +157,15 @@ def analyze_contract_risks(pdf_text: str) -> list:
         }
     )
 
-    # Jin clauses ke liye search karenge
-    # Yeh common risky clauses hain legal contracts mein
+    # Pass kiye hue vectorstore se retriever banao
+    # Yahi fix hai — naya instance nahi, wahi purana use karo
+    retriever = vectorstore.as_retriever(
+        search_type="similarity",           # Cosine similarity use karo
+        search_kwargs={"k": config.TOP_K_RESULTS}  # Top 5 chunks lo
+    )
+
+    # Common risky clauses — inke liye search karenge
+    # Legal contracts mein yeh clauses usually problematic hote hain
     risky_clause_queries = [
         "non-compete clause employee restriction",
         "termination clause notice period",
@@ -235,19 +181,18 @@ def analyze_contract_risks(pdf_text: str) -> list:
 
     for query in risky_clause_queries:
         print(f"   🔎 Dhundh raha hun: {query}")
+        try:
+            # Step 1: ChromaDB se similar chunks dhundo
+            relevant_docs = retriever.invoke(query)
 
-        # ChromaDB se relevant chunks lo
-        relevant_docs = retriever.invoke(query)
+            if relevant_docs:
+                # Step 2: Chunks ko readable format mein convert karo
+                context = format_docs(relevant_docs)
 
-        # Agar koi relevant chunk mila toh analyze karo
-        if relevant_docs:
-            context = format_docs(relevant_docs)
+                # Step 3: Sabse relevant chunk = main clause
+                main_chunk = relevant_docs[0].page_content
 
-            # Top relevant chunk ko main clause maano
-            main_chunk = relevant_docs[0].page_content
-
-            try:
-                # LLM se analysis lo
+                # Step 4: LLM se analyze karo
                 result = (prompt | llm | parser).invoke({
                     "clause_text": main_chunk,
                     "context": context
@@ -255,47 +200,54 @@ def analyze_contract_risks(pdf_text: str) -> list:
 
                 analyses.append(result)
 
-            except Exception as e:
-                # Agar ek clause fail ho toh
-                # baaki ko rokna nahi chahiye
-                print(f"   ⚠️  Skip kiya ({query}): {e}")
-                continue
+        except Exception as e:
+            # Ek clause fail ho toh baaki rukna nahi chahiye
+            # Skip karo aur aage badho
+            print(f"   ⚠️  Skip kiya ({query}): {e}")
+            continue
 
     print(f"✅ {len(analyses)} clauses analyze ho gaye!")
     return analyses
 
 
 # ============================================
-# STEP 7: CHAT FUNCTION — Q&A
+# CHAT FUNCTION
 # ============================================
 
-def chat_with_contract(question: str, chat_history: list = []) -> str:
+def chat_with_contract(question: str, vectorstore) -> str:
     """
     User koi bhi question pooch sakta hai contract ke baare mein
 
-    Simple RAG chain:
-    Question → Retrieve chunks → LLM → Answer
+    vectorstore PARAMETER kyu?
+    Same reason as above — ek hi instance use karo
+    app.py session state se pass karta hai
 
-    chat_history kyu?
-    - Future mein multi-turn conversation ke liye
-    - Abhi simple Q&A hai
+    Simple RAG flow:
+    Question → Retrieve relevant chunks → LLM ko bhejo → Answer lo
     """
 
     print(f"\n💬 Question: {question}")
 
-    retriever = get_retriever()
     llm = get_llm()
+
+    # Same vectorstore — naya instance nahi bana rahe
+    retriever = vectorstore.as_retriever(
+        search_type="similarity",
+        search_kwargs={"k": config.TOP_K_RESULTS}
+    )
 
     prompt = PromptTemplate(
         template=CHAT_PROMPT,
         input_variables=["context", "question"]
     )
 
-    # Retrieved docs ko format karo
+    # Step 1: Question se relevant chunks dhundo
     relevant_docs = retriever.invoke(question)
+
+    # Step 2: Chunks format karo
     context = format_docs(relevant_docs)
 
-    # Chain chalao
+    # Step 3: LLM ko bhejo
     chain = prompt | llm
 
     response = chain.invoke({
@@ -303,5 +255,5 @@ def chat_with_contract(question: str, chat_history: list = []) -> str:
         "question": question
     })
 
-    # ChatGroq response mein .content se text milta hai
+    # ChatGroq response object hota hai — .content se actual text milta hai
     return response.content

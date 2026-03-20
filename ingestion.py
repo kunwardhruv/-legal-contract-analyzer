@@ -1,50 +1,61 @@
 # ingestion.py
-# YEH HAI HEART OF RAG!
-# PDF → Chunks → Vectors → ChromaDB
+# PDF → Text → Chunks → Vectors → ChromaDB
+# Yeh hai RAG ka HEART!
 
-import fitz  # PyMuPDF — PDF padhne ke liye
+import fitz  # PyMuPDF — PDF se text nikalne ke liye
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-# RecursiveCharacterTextSplitter — smartly text ko chunks mein todta hai
-# "Recursive" kyun? Pehle paragraphs pe try karta hai split karne ki
-# Phir sentences, phir words — smart splitting!
+# RecursiveCharacterTextSplitter — text ko smartly chunks mein todta hai
+# "Recursive" kyun? Priority order mein split karta hai:
+# Pehle paragraphs → phir lines → phir sentences → phir words
 
 from langchain_huggingface import HuggingFaceEmbeddings
-# HuggingFace ka free embedding model use karega
+# HuggingFace ka free local embedding model
 # Text → Numbers (vectors) convert karta hai
+# "Meaning" ko numbers mein represent karta hai
 
 from langchain_chroma import Chroma
-# ChromaDB ke saath baat karne ka interface
+# ChromaDB ke saath baat karne ka LangChain interface
+# Vectors store aur search karta hai
 
-import config  # Hamari settings file
+import config
 import os
+
 
 # ============================================
 # STEP 1: PDF SE TEXT NIKALO
 # ============================================
 
 def extract_text_from_pdf(pdf_path: str) -> str:
-    
+    """
+    PDF file kholo aur saara text nikalo
+    PyMuPDF kyu? — Fastest Python PDF library
+    Legal PDFs mein complex formatting hoti hai, yeh sab handle karta hai
+    """
+
     print(f"📄 PDF padh raha hun: {pdf_path}")
-    
-    doc = fitz.open(pdf_path)
-    
-    # Pehle page count save karo — close karne SE PEHLE!
+
+    doc = fitz.open(pdf_path)  # PDF file kholo
+
+    # IMPORTANT: total_pages PEHLE save karo
+    # doc.close() ke baad len(doc) call nahi kar sakte
     total_pages = len(doc)
-    
+
     full_text = ""
-    
+
+    # Har page pe jaao aur text nikalo
     for page_num in range(total_pages):
         page = doc[page_num]
-        text = page.get_text()
+        text = page.get_text()  # Page ka text nikalo
+
+        # Page number bhi add karo — baad mein helpful hoga
         full_text += f"\n--- Page {page_num + 1} ---\n"
         full_text += text
-    
-    doc.close()
-    
-    # Ab saved variable use karo — doc.close() ke baad bhi kaam karega ✅
+
+    doc.close()  # File band karo — memory free karo
+
     print(f"✅ {total_pages} pages padh liye!")
     print(f"📝 Total characters: {len(full_text)}")
-    
+
     return full_text
 
 
@@ -54,167 +65,162 @@ def extract_text_from_pdf(pdf_path: str) -> str:
 
 def split_text_into_chunks(text: str) -> list:
     """
-    Bada text → Chote chote chunks
-    
+    Bada text → Chote chote pieces (chunks)
+
     Kyu chunking zaroori hai?
-    - Poora contract ek saath LLM ko nahi bhej sakte (expensive + inaccurate)
-    - Chote chunks se accurate retrieval hoti hai
-    - Sirf relevant chunk bhejo → better answers
+    Problem: Poora contract (50,000 words) ek saath LLM ko bhejne pe:
+    → Bahut expensive (tokens = paise)
+    → LLM "lost in middle" — beech ka content bhool jaata hai
+    → Slow response
+
+    Solution: Sirf RELEVANT chunks bhejo
+    User question → similar chunks dhundo → sirf woh bhejo → fast + cheap + accurate!
     """
-    
+
     print("✂️  Text ko chunks mein tod raha hun...")
-    
+
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=config.CHUNK_SIZE,         # 1000 characters per chunk
-        chunk_overlap=config.CHUNK_OVERLAP,   # 200 char overlap
-        
-        # Kahan pe split kare — priority order mein:
+        chunk_size=config.CHUNK_SIZE,       # Max 1000 chars per chunk
+        chunk_overlap=config.CHUNK_OVERLAP, # 200 chars overlap — context nahi toota
+
+        # Split priority order — pehle bada, phir chota
         separators=[
-            "\n\n",   # Pehle paragraphs pe try karo
-            "\n",     # Phir lines pe
-            ". ",     # Phir sentences pe
-            " ",      # Phir words pe
-            ""        # Last resort — anywhere
+            "\n\n",  # Pehle paragraphs pe try karo (best split point)
+            "\n",    # Phir line breaks pe
+            ". ",    # Phir sentences pe
+            " ",     # Phir words pe
+            ""       # Last resort — kahi bhi
         ]
     )
-    
+
     chunks = splitter.split_text(text)
-    
+
     print(f"✅ {len(chunks)} chunks bane!")
     print(f"📊 Average chunk size: {sum(len(c) for c in chunks) // len(chunks)} chars")
-    
+
     return chunks
 
 
 # ============================================
-# STEP 3: EMBEDDINGS BANAO (Text → Vectors)
+# STEP 3: EMBEDDING MODEL LOAD KARO
 # ============================================
 
 def get_embedding_model():
     """
-    HuggingFace embedding model load karo
-    
+    HuggingFace ka free embedding model load karo
+
+    Embedding kya hai?
+    "Non-compete clause" → [0.23, -0.87, 0.45, ... 384 numbers]
+    "Employee restriction" → [0.21, -0.85, 0.43, ...]  ← similar numbers!
+    Similar meaning = similar numbers = ChromaDB dhundh sakta hai!
+
     all-MiniLM-L6-v2 kyu?
-    - Free hai (local run hota hai)
-    - 80MB only — lightweight
-    - 384-dimensional vectors banata hai
-    - Legal text ke liye accurate enough
-    - Most popular open-source embedding model
-    
-    Pehli baar: Model download hoga (~80MB)
-    Baad mein: Cache se load hoga (fast!)
+    → Free hai — local machine pe run hota hai
+    → Sirf 80MB — lightweight
+    → 384-dimensional vectors — accurate enough for legal text
+    → Sabse popular open-source embedding model
+
+    Pehli baar: ~80MB download hoga
+    Baar baar: Cache se load hoga — fast!
     """
-    
+
     print("🔢 Embedding model load ho raha hai...")
     print("   (Pehli baar: ~80MB download hoga, wait karo!)")
-    
+
     embeddings = HuggingFaceEmbeddings(
-        model_name=config.EMBEDDING_MODEL,
-        model_kwargs={"device": "cpu"},  # CPU pe chalao (GPU nahi chahiye)
-        encode_kwargs={"normalize_embeddings": True}
-        # normalize = vectors ko 0-1 range mein laao
-        # Better similarity search ke liye
+        model_name=config.EMBEDDING_MODEL,          # "all-MiniLM-L6-v2"
+        model_kwargs={"device": "cpu"},              # CPU pe chalao — GPU nahi chahiye
+        encode_kwargs={"normalize_embeddings": True} # Vectors 0-1 range mein — better search
     )
-    
+
     print("✅ Embedding model ready!")
     return embeddings
 
 
 # ============================================
-# STEP 4: CHROMADB MEIN SAVE KARO
+# STEP 4: CHROMADB MEIN STORE KARO
 # ============================================
 
 def store_in_chromadb(chunks: list, filename: str):
-    
+    """
+    Chunks → Vectors banao → ChromaDB mein save karo
+
+    ChromaDB kaise kaam karta hai:
+    1. Har chunk ka vector banata hai (embedding model use karke)
+    2. Vector + original text + metadata saath store karta hai
+    3. Similarity search ke liye optimized hai
+
+    IMPORTANT: Hamesha in-memory use karo (persist_directory nahi)
+    Kyu? Streamlit Cloud pe file system write nahi hota
+    In-memory = RAM mein store hota hai = cloud + local dono pe kaam karta hai
+    Trade-off: Page refresh pe data reset — par yeh acceptable hai
+    """
+
     print(f"🗄️  ChromaDB mein store kar raha hun...")
-    
+
+    # Har chunk ke saath extra info (metadata) store karo
+    # Kyu? Baad mein pata chale ki chunk kaunse file ka hai
     metadatas = [
-        {"source": filename, "chunk_index": i}
+        {
+            "source": filename,  # Kaunsi file se aaya
+            "chunk_index": i     # Kaunsa chunk number hai
+        }
         for i, _ in enumerate(chunks)
     ]
-    
+
     embedding_model = get_embedding_model()
-    
-    # Cloud pe in-memory use karo, local pe persistent
-    import os
-    if os.path.exists("/mount/src"):  
-        # Streamlit Cloud pe hai
-        vectorstore = Chroma.from_texts(
-            texts=chunks,
-            embedding=embedding_model,
-            metadatas=metadatas,
-            collection_name=config.COLLECTION_NAME
-            # persist_directory nahi diya = in-memory!
-        )
-    else:
-        # Local machine pe hai
-        vectorstore = Chroma.from_texts(
-            texts=chunks,
-            embedding=embedding_model,
-            metadatas=metadatas,
-            persist_directory=config.CHROMA_DB_PATH,
-            collection_name=config.COLLECTION_NAME
-        )
-    
-    print(f"✅ {len(chunks)} chunks store ho gaye!")
+
+    # In-memory ChromaDB — persist_directory nahi diya
+    # Yeh RAM mein rehta hai — cloud pe bhi perfectly kaam karta hai
+    vectorstore = Chroma.from_texts(
+        texts=chunks,                        # Hamare text chunks
+        embedding=embedding_model,           # Embedding model
+        metadatas=metadatas,                 # Extra info
+        collection_name=config.COLLECTION_NAME  # DB ka naam
+        # persist_directory intentionally nahi diya — in-memory!
+    )
+
+    print(f"✅ {len(chunks)} chunks ChromaDB mein save ho gaye!")
+
+    # Vectorstore RETURN karo — caller isko session state mein save karega
+    # Yahi sabse important hai — ek hi instance poori app mein use ho
     return vectorstore
 
 
 # ============================================
-# MAIN FUNCTION — Sab ek saath
+# MAIN FUNCTION — Upar sab ek saath
 # ============================================
 
-def ingest_pdf(pdf_path: str) -> Chroma:
+def ingest_pdf(pdf_path: str):
     """
-    Ek PDF lo aur poori pipeline chalao
-    
-    PDF Path → Extract → Split → Embed → Store → Return VectorStore
+    Ek PDF path lo → poori pipeline chalao → vectorstore return karo
+
+    Flow:
+    PDF file → Text nikalo → Chunks banao → Vectors banao → ChromaDB → Return
     """
-    
+
     print("\n" + "="*50)
     print("🚀 PDF Ingestion Pipeline shuru!")
     print("="*50)
-    
-    # Filename nikalo path se
-    filename = os.path.basename(pdf_path)
-    
-    # Step 1: Text nikalo
+
+    filename = os.path.basename(pdf_path)  # "contract.pdf" nikalo full path se
+
+    # Step 1: PDF se text nikalo
     text = extract_text_from_pdf(pdf_path)
-    
-    # Agar text nahi mila toh error
+
+    # Safety check — agar text empty hai toh scanned PDF hai
     if not text.strip():
-        raise ValueError("❌ PDF mein koi text nahi mila! Scanned image PDF hai kya?")
-    
-    # Step 2: Chunks banao
+        raise ValueError("❌ PDF mein koi text nahi mila! Scanned image PDF ho sakti hai.")
+
+    # Step 2: Text → Chunks
     chunks = split_text_into_chunks(text)
-    
-    # Step 3 + 4: Embed karo aur store karo
+
+    # Step 3 + 4: Chunks → Vectors → ChromaDB
     vectorstore = store_in_chromadb(chunks, filename)
-    
+
     print("\n" + "="*50)
     print("✅ Ingestion complete! PDF ready for analysis!")
     print("="*50 + "\n")
-    
-    return vectorstore
 
-
-def load_existing_vectorstore() -> Chroma:
-    """
-    Agar pehle se ChromaDB mein data save hai
-    Toh dobara process mat karo — seedha load karo
-    
-    Yeh kyun zaroori hai?
-    - Har baar PDF upload karne pe dobara process karna slow hai
-    - ChromaDB persist karta hai (local file mein save rehta hai)
-    - Sirf load karo aur use karo!
-    """
-    
-    embedding_model = get_embedding_model()
-    
-    vectorstore = Chroma(
-        persist_directory=config.CHROMA_DB_PATH,
-        embedding_function=embedding_model,
-        collection_name=config.COLLECTION_NAME
-    )
-    
+    # Vectorstore return karo — app.py isko session state mein save karega
     return vectorstore
