@@ -14,7 +14,8 @@ pymupdf==1.24.14
 sentence-transformers==3.3.1
 
 # Data Validation
-pydantic==2.10.3
+pydantic==2.9.2
+pydantic-core==2.23.4
 
 # Frontend
 streamlit==1.41.1
