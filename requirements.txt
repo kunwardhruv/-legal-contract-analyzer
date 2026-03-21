@@ -7,8 +7,9 @@ langchain-community==0.3.7
 # PDF Processing
 pymupdf==1.24.14
 
-# Vector Database — FAISS
-faiss-cpu==1.7.4
+# Vector Database — ChromaDB (in-memory, EphemeralClient)
+chromadb==0.5.20
+langchain-chroma==0.1.4
 
 # Embeddings (HuggingFace local)
 sentence-transformers==3.3.1

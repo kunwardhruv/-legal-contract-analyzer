@@ -11,12 +11,17 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 # HuggingFace ka free local embedding model
 # Text → Numbers (vectors) convert karta hai
-# "Meaning" ko numbers mein represent karta hai
-from langchain_community.vectorstores import FAISS
+
+from langchain_chroma import Chroma
+# ChromaDB ke saath LangChain ka interface
+
+import chromadb
+# chromadb directly import karo — EphemeralClient ke liye
+# EphemeralClient = Pure in-memory, fresh client har baar
+# Yahi hai asli fix — global client nahi, fresh client!
 
 import config
 import os
-
 
 
 # ============================================
@@ -32,7 +37,7 @@ def extract_text_from_pdf(pdf_path: str) -> str:
 
     print(f"📄 PDF padh raha hun: {pdf_path}")
 
-    doc = fitz.open(pdf_path)  # PDF file kholo
+    doc = fitz.open(pdf_path)
 
     # IMPORTANT: total_pages PEHLE save karo
     # doc.close() ke baad len(doc) call nahi kar sakte
@@ -40,16 +45,15 @@ def extract_text_from_pdf(pdf_path: str) -> str:
 
     full_text = ""
 
-    # Har page pe jaao aur text nikalo
     for page_num in range(total_pages):
         page = doc[page_num]
-        text = page.get_text()  # Page ka text nikalo
+        text = page.get_text()
 
         # Page number bhi add karo — baad mein helpful hoga
         full_text += f"\n--- Page {page_num + 1} ---\n"
         full_text += text
 
-    doc.close()  # File band karo — memory free karo
+    doc.close()
 
     print(f"✅ {total_pages} pages padh liye!")
     print(f"📝 Total characters: {len(full_text)}")
@@ -66,13 +70,9 @@ def split_text_into_chunks(text: str) -> list:
     Bada text → Chote chote pieces (chunks)
 
     Kyu chunking zaroori hai?
-    Problem: Poora contract (50,000 words) ek saath LLM ko bhejne pe:
-    → Bahut expensive (tokens = paise)
-    → LLM "lost in middle" — beech ka content bhool jaata hai
-    → Slow response
-
-    Solution: Sirf RELEVANT chunks bhejo
-    User question → similar chunks dhundo → sirf woh bhejo → fast + cheap + accurate!
+    → Poora contract ek saath LLM ko nahi bhej sakte (expensive + slow)
+    → Chote chunks se accurate retrieval hoti hai
+    → Sirf relevant chunk bhejo → better answers
     """
 
     print("✂️  Text ko chunks mein tod raha hun...")
@@ -80,14 +80,12 @@ def split_text_into_chunks(text: str) -> list:
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=config.CHUNK_SIZE,       # Max 1000 chars per chunk
         chunk_overlap=config.CHUNK_OVERLAP, # 200 chars overlap — context nahi toota
-
-        # Split priority order — pehle bada, phir chota
         separators=[
-            "\n\n",  # Pehle paragraphs pe try karo (best split point)
+            "\n\n",  # Pehle paragraphs pe try karo
             "\n",    # Phir line breaks pe
             ". ",    # Phir sentences pe
             " ",     # Phir words pe
-            ""       # Last resort — kahi bhi
+            ""       # Last resort
         ]
     )
 
@@ -107,28 +105,19 @@ def get_embedding_model():
     """
     HuggingFace ka free embedding model load karo
 
-    Embedding kya hai?
-    "Non-compete clause" → [0.23, -0.87, 0.45, ... 384 numbers]
-    "Employee restriction" → [0.21, -0.85, 0.43, ...]  ← similar numbers!
-    Similar meaning = similar numbers = ChromaDB dhundh sakta hai!
-
     all-MiniLM-L6-v2 kyu?
     → Free hai — local machine pe run hota hai
     → Sirf 80MB — lightweight
     → 384-dimensional vectors — accurate enough for legal text
     → Sabse popular open-source embedding model
-
-    Pehli baar: ~80MB download hoga
-    Baar baar: Cache se load hoga — fast!
     """
 
     print("🔢 Embedding model load ho raha hai...")
-    print("   (Pehli baar: ~80MB download hoga, wait karo!)")
 
     embeddings = HuggingFaceEmbeddings(
-        model_name=config.EMBEDDING_MODEL,          # "all-MiniLM-L6-v2"
-        model_kwargs={"device": "cpu"},              # CPU pe chalao — GPU nahi chahiye
-        encode_kwargs={"normalize_embeddings": True} # Vectors 0-1 range mein — better search
+        model_name=config.EMBEDDING_MODEL,           # "all-MiniLM-L6-v2"
+        model_kwargs={"device": "cpu"},               # CPU pe chalao
+        encode_kwargs={"normalize_embeddings": True}  # Better similarity search
     )
 
     print("✅ Embedding model ready!")
@@ -136,31 +125,64 @@ def get_embedding_model():
 
 
 # ============================================
-# STEP 4: FAISS MEIN STORE KARO
+# STEP 4: CHROMADB MEIN STORE KARO
 # ============================================
-def store_in_vectordb(chunks: list, filename: str):
-    
-    print(f"🗄️  FAISS mein store kar raha hun...")
-    
+
+def store_in_chromadb(chunks: list, filename: str):
+    """
+    Chunks → Vectors → ChromaDB mein store karo
+
+    EphemeralClient kyu?
+    Pehle Chroma.from_texts() directly use karte the
+    Problem: Global ChromaDB client reuse hota tha
+             Dusri PDF upload pe same tenant → "tenant not found" error!
+
+    Fix: EphemeralClient() = Bilkul naya fresh client har baar
+         Koi global state nahi = koi conflict nahi = koi error nahi! ✅
+
+    EphemeralClient = In-memory = Cloud pe bhi kaam karta hai
+    """
+
+    print(f"🗄️  ChromaDB mein store kar raha hun...")
+
+    # Har chunk ke saath metadata store karo
+    # Kyu? Baad mein pata chale ki chunk kaunse file ka hai
     metadatas = [
-        {"source": filename, "chunk_index": i}
+        {
+            "source": filename,   # Kaunsi file se aaya
+            "chunk_index": i      # Kaunsa chunk number hai
+        }
         for i, _ in enumerate(chunks)
     ]
-    
+
     embedding_model = get_embedding_model()
-    
-    # FAISS = Pure in-memory, no client needed
-    # Har baar fresh instance — zero conflicts!
-    vectorstore = FAISS.from_texts(
+
+    # EphemeralClient = Bilkul fresh in-memory ChromaDB client
+    # Har PDF upload pe naya client → koi tenant conflict nahi
+    # Yeh key fix hai jo dono PDFs ko kaam karwata hai!
+    fresh_client = chromadb.EphemeralClient()
+
+    vectorstore = Chroma(
+        client=fresh_client,                          # Fresh client — no conflicts!
+        collection_name=config.COLLECTION_NAME,       # Collection ka naam
+        embedding_function=embedding_model,           # Embedding model
+    )
+
+    # Chunks add karo vectorstore mein
+    vectorstore.add_texts(
         texts=chunks,
-        embedding=embedding_model,
         metadatas=metadatas
     )
-    
-    print(f"✅ {len(chunks)} chunks FAISS mein save ho gaye!")
+
+    print(f"✅ {len(chunks)} chunks ChromaDB mein save ho gaye!")
+
+    # Vectorstore return karo — app.py session state mein save karega
+    # Yahi ek instance poori app mein use hoga
     return vectorstore
+
+
 # ============================================
-# MAIN FUNCTION — Upar sab ek saath
+# MAIN FUNCTION — Sab ek saath
 # ============================================
 
 def ingest_pdf(pdf_path: str):
@@ -168,31 +190,30 @@ def ingest_pdf(pdf_path: str):
     Ek PDF path lo → poori pipeline chalao → vectorstore return karo
 
     Flow:
-    PDF file → Text nikalo → Chunks banao → Vectors banao → ChromaDB → Return
+    PDF → Text nikalo → Chunks banao → Vectors banao → ChromaDB → Return
     """
 
     print("\n" + "="*50)
     print("🚀 PDF Ingestion Pipeline shuru!")
     print("="*50)
 
-    filename = os.path.basename(pdf_path)  # "contract.pdf" nikalo full path se
+    filename = os.path.basename(pdf_path)
 
     # Step 1: PDF se text nikalo
     text = extract_text_from_pdf(pdf_path)
 
-    # Safety check — agar text empty hai toh scanned PDF hai
+    # Safety check
     if not text.strip():
         raise ValueError("❌ PDF mein koi text nahi mila! Scanned image PDF ho sakti hai.")
 
     # Step 2: Text → Chunks
     chunks = split_text_into_chunks(text)
 
-    # Step 3 + 4: Chunks → Vectors → FAISS
-    vectorstore = store_in_vectordb(chunks, filename)
+    # Step 3 + 4: Chunks → Vectors → ChromaDB (EphemeralClient)
+    vectorstore = store_in_chromadb(chunks, filename)
 
     print("\n" + "="*50)
     print("✅ Ingestion complete! PDF ready for analysis!")
     print("="*50 + "\n")
 
-    # Vectorstore return karo — app.py isko session state mein save karega
     return vectorstore

@@ -22,7 +22,7 @@ from langchain_core.output_parsers import JsonOutputParser
 # Bina iske LLM free text deta hai — parse karna mushkil hota
 
 
-from langchain_community.vectorstores import FAISS
+from langchain_chroma import Chroma
 
 
 import config
