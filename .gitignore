@@ -1,13 +1,10 @@
-# Virtual environment — 500MB+ hai, zarurat nahi
+# Virtual environment
 venv/
 
-# API Keys — KABHI NAHI upload karo!
+# API Keys — KABHI upload mat karo!
 .env
 
-# ChromaDB — Local database, regenerate ho sakta hai
-chroma_db/
-
-# Python cache files
+# Python cache
 __pycache__/
 *.pyc
 *.pyo
@@ -16,11 +13,23 @@ __pycache__/
 test_ingestion.py
 test_retrieval.py
 
-# Windows files
+# Windows
 Thumbs.db
 desktop.ini
 
 # VS Code
 .vscode/
 
+# Streamlit secrets — API key hai andar!
 .streamlit/secrets.toml
+
+# FAISS local save (agar kabhi save kiya)
+*.faiss
+*.pkl
+```
+
+---
+
+## FILE 9: `.python-version`
+```
+3.11

@@ -1,25 +1,44 @@
-# LLM + AI Framework
+# ============================================
+# REQUIREMENTS.TXT
+# Saari libraries ki list jo project mein chahiye
+# pip install -r requirements.txt se sab install hoga
+# ============================================
+
+# LangChain = AI orchestration framework
+# Sab kuch connect karta hai — PDF, embeddings, LLM, retrieval
 langchain==0.3.7
+
+# LangChain ka Groq connector
+# Groq API ke saath baat karne ke liye
 langchain-groq==0.2.1
+
+# LangChain ka HuggingFace connector
+# HuggingFace embedding models use karne ke liye
 langchain-huggingface==0.1.2
+
+# LangChain community integrations
+# FAISS vector store yahan se aata hai
 langchain-community==0.3.7
 
-# PDF Processing
+# PDF text extraction
+# Legal PDFs se text nikalne ke liye — fastest Python PDF library
 pymupdf==1.24.14
 
-# Vector Database — ChromaDB (in-memory, EphemeralClient)
-chromadb==0.5.20
-langchain-chroma==0.1.4
+# FAISS = Facebook AI Similarity Search
+# Vector database — in-memory, no client, no tenant, no drama!
+# ChromaDB ki jagah — cloud pe perfectly kaam karta hai
+faiss-cpu==1.7.4
 
-# Embeddings (HuggingFace local)
+# HuggingFace embedding model download karne ke liye
+# all-MiniLM-L6-v2 model yahan se aata hai
 sentence-transformers==3.3.1
 
-# Data Validation
+# Data validation — LLM output ko structured format mein enforce karta hai
 pydantic==2.9.2
 pydantic-core==2.23.4
 
-# Frontend
+# Frontend UI — Python mein hi UI banana
 streamlit==1.41.1
 
-# Environment Variables
+# .env file se API keys padhne ke liye
 python-dotenv==1.0.1

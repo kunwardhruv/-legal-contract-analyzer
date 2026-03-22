@@ -1,50 +1,90 @@
-# app.py
+# ============================================
+# APP.PY
 # Streamlit UI — Project ka face!
+#
 # Yahan sab kuch ek jagah aata hai:
 # Upload → Process → Show Results → Chat
+#
+# Streamlit kyu?
+# → Python mein hi UI banana — no HTML/CSS/JS
+# → File upload, chat, metrics — sab ready made
+# → Free deployment on Streamlit Cloud
+# → data science/AI projects ke liye industry standard
+# ============================================
 
 import streamlit as st
-import tempfile
-import os
+# Streamlit = Python UI framework
+# st.button(), st.file_uploader(), st.chat_input() etc.
 
+import tempfile
+# tempfile = Temporary files banana
+# Kyu? Streamlit uploaded file memory mein hota hai
+# PyMuPDF ko actual disk path chahiye
+# Solution: Temp file banao → use karo → delete karo
+
+import os
+# File system operations
+# os.path.exists(), os.unlink() etc.
+
+# Hamare modules import karo
 from ingestion import ingest_pdf, extract_text_from_pdf
+# ingest_pdf = Poori pipeline: PDF → FAISS
+# extract_text_from_pdf = Sirf text extraction
+
 from retrieval import (
-    get_contract_summary,
-    analyze_contract_risks,
-    chat_with_contract
+    get_contract_summary,      # Contract ka overview
+    analyze_contract_risks,    # Clause by clause risk analysis
+    chat_with_contract         # Q&A with contract
 )
 
+
 # ============================================
-# PAGE CONFIG — Sabse pehle hona chahiye
+# PAGE CONFIG
+# Yeh SABSE PEHLE hona chahiye — koi bhi st. call se pehle!
 # ============================================
 
 st.set_page_config(
-    page_title="Legal Contract Analyzer",
-    page_icon="⚖️",
-    layout="wide",                    # Wide layout — zyada space
-    initial_sidebar_state="collapsed" # Sidebar band rakho
+    page_title="Legal Contract Analyzer",  # Browser tab ka title
+    page_icon="⚖️",                        # Browser tab ka icon
+    layout="wide",                          # Full width layout
+    initial_sidebar_state="collapsed"       # Sidebar band rakho
 )
 
+
 # ============================================
-# CUSTOM CSS — UI thoda sundar banao
+# CUSTOM CSS
+# Streamlit ke default styles override karo
 # ============================================
 
 st.markdown("""
 <style>
+    /* Risk level badges ke liye custom styles */
     .risk-high {
-        background: #EF444420; border: 1px solid #EF4444;
-        color: #EF4444; padding: 4px 12px;
-        border-radius: 20px; font-weight: bold; font-size: 14px;
+        background: #EF444420;
+        border: 1px solid #EF4444;
+        color: #EF4444;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-weight: bold;
+        font-size: 14px;
     }
     .risk-medium {
-        background: #F59E0B20; border: 1px solid #F59E0B;
-        color: #F59E0B; padding: 4px 12px;
-        border-radius: 20px; font-weight: bold; font-size: 14px;
+        background: #F59E0B20;
+        border: 1px solid #F59E0B;
+        color: #F59E0B;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-weight: bold;
+        font-size: 14px;
     }
     .risk-low {
-        background: #10B98120; border: 1px solid #10B981;
-        color: #10B981; padding: 4px 12px;
-        border-radius: 20px; font-weight: bold; font-size: 14px;
+        background: #10B98120;
+        border: 1px solid #10B981;
+        color: #10B981;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-weight: bold;
+        font-size: 14px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -52,39 +92,45 @@ st.markdown("""
 
 # ============================================
 # SESSION STATE — Streamlit ka Memory System
-# ============================================
-
-# Session State kya hai aur kyu chahiye?
-# Streamlit mein problem: Har button click pe POORA script dobara run hota hai!
-# Matlab sab variables reset ho jaate hain
+#
+# Problem: Streamlit mein har button click pe
+#          POORA script dobara run hota hai!
+#          Sab variables reset ho jaate hain!
 #
 # Solution: st.session_state = Permanent storage
-# Jab tak browser tab band na ho, data yahan safe rehta hai
+#           Page refresh tak data safe rehta hai
 #
-# Analogy: Normal variable = RAM (reset hoti hai)
-#          session_state = Hard disk (persist hoti hai)
+# Analogy:
+# Normal variable = RAM → power off pe reset
+# session_state = SSD → power off pe bhi safe
+# ============================================
 
+# PDF process hua kya? (button dikhane/chhupane ke liye)
 if "pdf_processed" not in st.session_state:
-    st.session_state.pdf_processed = False   # PDF analyze hua kya?
+    st.session_state.pdf_processed = False
 
+# Contract ka overview (summary section ke liye)
 if "contract_summary" not in st.session_state:
-    st.session_state.contract_summary = None # Contract ka overview
+    st.session_state.contract_summary = None
 
+# Saare clause analyses (risk section ke liye)
 if "risk_analyses" not in st.session_state:
-    st.session_state.risk_analyses = []      # Saare clause analyses
+    st.session_state.risk_analyses = []
 
+# Chat history (chat section ke liye)
 if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []       # Chat messages
+    st.session_state.chat_history = []
 
+# Raw PDF text (summary generation ke liye)
 if "pdf_text" not in st.session_state:
-    st.session_state.pdf_text = ""           # Raw PDF text
+    st.session_state.pdf_text = ""
 
+# FAISS vectorstore — SABSE IMPORTANT!
+# ingest_pdf() yahan save karta hai
+# analyze_contract_risks() aur chat_with_contract() yahan se lete hain
+# Ek hi instance = consistent data = no errors
 if "vectorstore" not in st.session_state:
     st.session_state.vectorstore = None
-    # SABSE IMPORTANT session state variable!
-    # ingest_pdf() jo vectorstore return karta hai, woh yahan save hoga
-    # analyze_contract_risks() aur chat_with_contract() yahan se lenge
-    # Ek hi instance = "tenant not found" error nahi aayega
 
 
 # ============================================
@@ -92,7 +138,15 @@ if "vectorstore" not in st.session_state:
 # ============================================
 
 def get_risk_emoji(risk_level: str) -> str:
-    """Risk level ko emoji mein convert karo — visual indicator"""
+    """
+    Risk level string → Emoji convert karo.
+
+    Kyu? Visual indicator — ek nazar mein risk samajh aaye
+    RED = HIGH = Danger!
+    YELLOW = MEDIUM = Caution
+    GREEN = LOW = OK
+    WHITE = NEUTRAL = No risk
+    """
     emojis = {
         "HIGH": "🔴",
         "MEDIUM": "🟡",
@@ -104,69 +158,78 @@ def get_risk_emoji(risk_level: str) -> str:
 
 def process_pdf(uploaded_file):
     """
-    Uploaded PDF ko process karo — poori pipeline chalao
+    Uploaded PDF ko complete process karo.
 
     Steps:
-    1. Temp file banao (Streamlit file = memory object, PyMuPDF ko real path chahiye)
+    1. Temp file banao (Streamlit file → disk path)
     2. Text extract karo
-    3. ingest_pdf() → vectorstore milega → SESSION STATE mein save karo
-    4. Summary lo
-    5. Risk analysis karo — SAME vectorstore pass karo
+    3. FAISS mein ingest karo → vectorstore save karo
+    4. Contract summary lo
+    5. Risk analysis karo
+    6. Temp file delete karo
+
+    Kyu try/except?
+    → Agar koi bhi step fail ho
+    → Error clearly dikhao user ko
+    → Temp file cleanup karo (memory waste na ho)
     """
 
     # Temp file kyu?
-    # Streamlit ka uploaded_file = memory mein hota hai
-    # PyMuPDF ko actual disk path chahiye
-    # Solution: Temporarily disk pe save karo → use karo → delete karo
+    # Streamlit ka uploaded_file = BytesIO object (memory mein)
+    # PyMuPDF ko actual disk path chahiye: "C:/temp/abc.pdf"
+    # Solution: Disk pe temporarily save karo
     with tempfile.NamedTemporaryFile(
-        delete=False,
-        suffix=".pdf"
+        delete=False,    # Hum manually delete karenge
+        suffix=".pdf"    # .pdf extension dena zaroori hai
     ) as tmp_file:
-        tmp_file.write(uploaded_file.getvalue())
-        tmp_path = tmp_file.name  # Yeh path PyMuPDF ko denge
+        tmp_file.write(uploaded_file.getvalue())  # File content likho
+        tmp_path = tmp_file.name                   # Path save karo
 
     try:
+        # Progress bar dikhao — user ko pata chale kya ho raha hai
         progress = st.progress(0, text="PDF padh raha hun...")
 
-        # Step 1: Text extract karo
+        # ── STEP 1: Text extract ──
         pdf_text = extract_text_from_pdf(tmp_path)
         st.session_state.pdf_text = pdf_text
         progress.progress(25, text="PDF padh liya! ✅")
 
-        # Step 2: PDF ingest karo — vectorstore return hoga
-        progress.progress(40, text="Vectors bana raha hun...")
+        # ── STEP 2: FAISS mein ingest ──
+        progress.progress(40, text="Smart legal chunks bana raha hun...")
         vectorstore = ingest_pdf(tmp_path)
 
-        # CRITICAL STEP: Vectorstore session state mein save karo
-        # Yeh wahi instance hai jo ChromaDB mein data store karta hai
-        # Baad mein analysis aur chat mein yahi pass karenge
+        # CRITICAL: Vectorstore session state mein save karo!
+        # Agar yahan save nahi kiya toh:
+        # analyze_contract_risks() ko pass karte waqt
+        # naya empty vectorstore banta
+        # = Koi data nahi = Koi analysis nahi!
         st.session_state.vectorstore = vectorstore
-        progress.progress(60, text="ChromaDB ready! ✅")
+        progress.progress(60, text="FAISS ready! ✅")
 
-        # Step 3: Contract summary lo (vectorstore ki zarurat nahi — direct text se)
-        progress.progress(70, text="Summary bana raha hun...")
+        # ── STEP 3: Summary ──
+        progress.progress(70, text="Contract summary bana raha hun...")
         summary = get_contract_summary(pdf_text)
         st.session_state.contract_summary = summary
         progress.progress(80, text="Summary ready! ✅")
 
-        # Step 4: Risk analysis — SESSION STATE wala vectorstore pass karo
-        # Naya instance mat banao — wahi use karo jo upar save kiya
-        progress.progress(85, text="Risky clauses dhundh raha hun...")
+        # ── STEP 4: Risk Analysis ──
+        progress.progress(85, text="Risky clauses analyze kar raha hun...")
         analyses = analyze_contract_risks(
             pdf_text,
-            vectorstore=st.session_state.vectorstore  # ← Same instance!
+            vectorstore=st.session_state.vectorstore  # Same instance pass karo!
         )
         st.session_state.risk_analyses = analyses
         progress.progress(100, text="Analysis complete! ✅")
 
         st.session_state.pdf_processed = True
-        os.unlink(tmp_path)  # Temp file delete karo — cleanup
+        os.unlink(tmp_path)  # Temp file cleanup
         return True
 
     except Exception as e:
         st.error(f"❌ Error aaya: {str(e)}")
+        # Error pe bhi temp file delete karo — disk space waste na ho
         if os.path.exists(tmp_path):
-            os.unlink(tmp_path)  # Error pe bhi temp file delete karo
+            os.unlink(tmp_path)
         return False
 
 
@@ -174,7 +237,7 @@ def process_pdf(uploaded_file):
 # MAIN UI
 # ============================================
 
-# Header
+# ── HEADER ──
 st.markdown("# ⚖️ Legal Contract Analyzer")
 st.markdown("### AI-powered contract review — Risky clauses dhundo, plain English mein samjho")
 st.divider()
@@ -200,7 +263,9 @@ with col2:
     - 💰 Investment / Equity
     """)
 
-# Analyze button — sirf tab dikhao jab file upload ho aur process na hua ho
+# Analyze button — sirf tab dikhao jab:
+# 1. File upload hui ho (uploaded_file is not None)
+# 2. Abhi process nahi hua ho (not pdf_processed)
 if uploaded_file is not None and not st.session_state.pdf_processed:
     st.info(f"📎 File ready: **{uploaded_file.name}**")
 
@@ -209,23 +274,25 @@ if uploaded_file is not None and not st.session_state.pdf_processed:
             success = process_pdf(uploaded_file)
             if success:
                 st.success("✅ Analysis complete!")
-                st.rerun()  # Page refresh karo taaki results dikhein
+                st.rerun()  # Page refresh → results dikhenge
 
 # Naya contract analyze karne ka button
+# Sirf tab dikhao jab koi contract already processed ho
 if st.session_state.pdf_processed:
     if st.button("📄 Naya Contract Analyze Karo", type="secondary"):
-        # Saara session state reset karo — fresh start
+        # Saara state reset — fresh start
         st.session_state.pdf_processed = False
         st.session_state.contract_summary = None
         st.session_state.risk_analyses = []
         st.session_state.chat_history = []
         st.session_state.pdf_text = ""
-        st.session_state.vectorstore = None  # Vectorstore bhi reset karo
+        st.session_state.vectorstore = None  # FAISS bhi reset
         st.rerun()
 
 
 # ============================================
-# RESULTS SECTION — Sirf tab dikhao jab PDF process hua ho
+# RESULTS SECTION
+# Sirf tab dikhao jab PDF process ho chuka ho
 # ============================================
 
 if st.session_state.pdf_processed:
@@ -242,16 +309,25 @@ if st.session_state.pdf_processed:
         m1, m2, m3, m4 = st.columns(4)
 
         with m1:
-            st.metric("Contract Type", summary.get('contract_type', 'N/A'))
+            st.metric(
+                label="Contract Type",
+                value=summary.get('contract_type', 'N/A')
+            )
 
         with m2:
             risk = summary.get('overall_risk', 'N/A')
             emoji = get_risk_emoji(risk)
-            st.metric("Overall Risk", f"{emoji} {risk}")
+            st.metric(
+                label="Overall Risk",
+                value=f"{emoji} {risk}"
+            )
 
         with m3:
             parties = summary.get('parties_involved', [])
-            st.metric("Parties Involved", len(parties))
+            st.metric(
+                label="Parties Involved",
+                value=len(parties)
+            )
 
         with m4:
             analyses = st.session_state.risk_analyses
@@ -259,9 +335,11 @@ if st.session_state.pdf_processed:
                 1 for a in analyses
                 if isinstance(a, dict) and a.get('risk_level') == 'HIGH'
             )
-            st.metric("High Risk Clauses", f"🔴 {high_risk}")
+            st.metric(
+                label="High Risk Clauses",
+                value=f"🔴 {high_risk}"
+            )
 
-        # Detailed summary expandable section
         with st.expander("📖 Contract Summary Details", expanded=True):
             st.markdown(f"**Overview:** {summary.get('summary', 'N/A')}")
 
@@ -293,7 +371,7 @@ if st.session_state.pdf_processed:
     analyses = st.session_state.risk_analyses
 
     if analyses:
-        # HIGH risk pehle dikhao — priority order
+        # HIGH risk pehle dikhao
         risk_order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2, "NEUTRAL": 3}
         sorted_analyses = sorted(
             analyses,
@@ -304,14 +382,13 @@ if st.session_state.pdf_processed:
         )
 
         for analysis in sorted_analyses:
-            # Dict ya Pydantic object — dono handle karo
             a = analysis if isinstance(analysis, dict) else analysis.dict()
 
             risk = a.get('risk_level', 'NEUTRAL')
             emoji = get_risk_emoji(risk)
             clause_type = a.get('clause_type', 'Unknown Clause')
 
-            # HIGH risk clauses automatically open dikhao
+            # HIGH risk = auto-open, baaki collapsed
             with st.expander(
                 f"{emoji} {clause_type} — {risk} RISK",
                 expanded=(risk == "HIGH")
@@ -334,13 +411,13 @@ if st.session_state.pdf_processed:
                 with tab3:
                     st.code(a.get('original_text', 'N/A'), language=None)
     else:
-        st.info("Koi risky clauses nahi mile — contract clean hai!")
+        st.info("Koi risky clauses nahi mile — contract clean lag raha hai!")
 
     st.divider()
 
     # ── CHAT SECTION ──
     st.subheader("💬 Contract se Pooch Kuch Bhi")
-    st.caption("Contract ke baare mein koi bhi question — Hindi ya English mein!")
+    st.caption("Hindi ya English mein pooch lo!")
 
     # Pehle existing chat history dikhao
     for message in st.session_state.chat_history:
@@ -351,10 +428,9 @@ if st.session_state.pdf_processed:
             with st.chat_message("assistant", avatar="⚖️"):
                 st.write(message["content"])
 
-    # Chat input — user ka question lo
+    # Chat input
     if question := st.chat_input("Pooch lo... jaise: 'Can I work for a competitor?'"):
 
-        # User message save karo aur dikhao
         st.session_state.chat_history.append({
             "role": "user",
             "content": question
@@ -362,16 +438,14 @@ if st.session_state.pdf_processed:
         with st.chat_message("user"):
             st.write(question)
 
-        # AI response lo — SESSION STATE wala vectorstore pass karo
         with st.chat_message("assistant", avatar="⚖️"):
             with st.spinner("Soch raha hun..."):
                 response = chat_with_contract(
                     question,
-                    vectorstore=st.session_state.vectorstore  # ← Same instance!
+                    vectorstore=st.session_state.vectorstore  # Same FAISS instance!
                 )
             st.write(response)
 
-        # AI response bhi save karo
         st.session_state.chat_history.append({
             "role": "assistant",
             "content": response
@@ -385,7 +459,7 @@ if st.session_state.pdf_processed:
 st.divider()
 st.markdown("""
 <div style='text-align: center; color: #4B5563; font-size: 12px;'>
-⚖️ Legal Contract Analyzer | Built with LangChain + Groq + ChromaDB<br>
+⚖️ Legal Contract Analyzer | LangChain + Groq + FAISS<br>
 ⚠️ AI analysis is for informational purposes only.
 Consult a qualified lawyer for legal advice.
 </div>
